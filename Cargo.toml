@@ -1,0 +1,13 @@
+[package]
+name = "fibridge-rs"
+version = "0.1.0"
+authors = ["Anders Pitman <tapitman11@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+hyper = "0.12"
+futures = "0.1"
+tokio = "0.1"
+omnistreams = { path = "../omnistreams/omnistreams-rs" }
+http_tester = { path = "../http-tester" }
+websocket = "0.22"
