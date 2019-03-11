@@ -1,98 +1,120 @@
-use hyper::{Method, StatusCode, Body, Request, Response, Server};
-use hyper::rt::Future;
-use hyper::service::{service_fn, service_fn_ok};
-use hyper::header::{UPGRADE, HeaderValue};
-use futures::future;
-use futures::stream::Stream;
-use futures::sync::mpsc::unbounded;
-use omnistreams::{Acceptor, WebSocketAcceptorBuilder};
+use warp::{self, Filter};
+use warp::filters::ws::{Message, WebSocket};
+use futures::{Future, Stream, Sink};
+use futures::sync::mpsc;
+use omnistreams::{Multiplexer, Transport};
+use serde_json::json;
+use uuid::Uuid;
 
+type OmniMessage = Vec<u8>;
+type MessageRx = mpsc::UnboundedReceiver<OmniMessage>;
+type MessageTx = mpsc::UnboundedSender<OmniMessage>;
 
-type BoxFut = Box<Future<Item=Response<Body>, Error=hyper::Error> + Send>;
-
-
-
-
-fn main() {
-
-    hyper::rt::run(hyper::rt::lazy(|| {
-        
-        run();
-        Ok(())
-    }));
+struct WebSocketTransport {
+    out_tx: MessageTx,
+    in_rx: Option<MessageRx>,
 }
 
-fn run() {
+impl WebSocketTransport {
+    fn new(ws: WebSocket) -> Self {
+        let (ws_sink, ws_stream) = ws.split();
+        let (out_tx, out_rx) = mpsc::unbounded::<OmniMessage>();
+        let (in_tx, in_rx) = mpsc::unbounded::<OmniMessage>();
 
-    let (upgraded_tx, upgraded_rx) = unbounded();
-    
-    let _acceptor = WebSocketAcceptorBuilder::new()
-        .port(9002)
-        .upgraded_rx(upgraded_rx)
-        .build();
+        let ws_sink = ws_sink
+            .sink_map_err(|_e| ());
 
-    //let transports = acceptor.transports().expect("no transports");
+        let out_task = out_rx.map_err(|_e| ())
+            .map(|omni_message| {
+                println!("{:?}", omni_message);
+                Message::binary(omni_message)
+            })
+            .forward(ws_sink)
+            .map(|_| ());
 
-    //hyper::rt::spawn(transports.for_each(|_transport| {
-    //    println!("transp");
-    //    //println!("{:?}", transport);
-    //    Ok(())
-    //})
-    //.map_err(|e| {
-    //    eprintln!("{:?}", e);
-    //}));
+        warp::spawn(out_task);
 
-    // This is our socket address...
-    let addr = ([127, 0, 0, 1], 9001).into();
 
-    let service = move || {
+        let in_tx = in_tx.sink_map_err(|_e| ());
 
-        let upgraded_tx = upgraded_tx.clone();
+        let in_task = ws_stream.map_err(|_e| ())
+            .map(|ws_message| {
+                println!("ws_message: {:?}", ws_message);
+                vec![0, 0, 65]
+            })
+            .forward(in_tx)
+            .map(|_| ());
 
-        //service_fn_ok(move |_req| {
-        service_fn(move |req: Request<Body>| {
-            let mut response = Response::new(Body::empty());
+        warp::spawn(in_task);
 
-            let upgraded_tx = upgraded_tx.clone();
+        Self {
+            out_tx,
+            in_rx: Some(in_rx),
+        }
+    }
+}
 
-            match (req.method(), req.uri().path()) {
-                (&Method::GET, "/") => {
-                    *response.body_mut() = Body::from("Try POSTing data to /echo");
-                },
-                (&Method::GET, "/omnistreams") => {
-                    let on_upgrade = req
-                        .into_body()
-                        .on_upgrade()
-                        .map_err(|err| eprintln!("upgrade error: {}", err))
-                        .and_then(move |upgraded| {
-                            //upgraded.write(b"hi there");
-                            //tokio::io::write_all(upgraded, b"Hi there");
-                            upgraded_tx.unbounded_send(upgraded).unwrap();
-                            Ok(())
-                        });
+impl Transport for WebSocketTransport {
+    fn send(&mut self, message: OmniMessage) {
+        println!("sendy");
+        self.out_tx.unbounded_send(message).expect("ws transport send");
+    }
+    fn messages(&mut self) -> Option<mpsc::UnboundedReceiver<OmniMessage>> {
+        Option::take(&mut self.in_rx)
+    }
+}
 
-                    hyper::rt::spawn(on_upgrade);
+fn main() {
+    let omnis = warp::path("omnistreams")
+        .and(warp::ws2())
+        .map(|ws: warp::ws::Ws2| {
+            ws.on_upgrade(|socket| {
 
-                    *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
-                    response.headers_mut().insert(UPGRADE, HeaderValue::from_static("websocket"));
-                    //*response.body_mut() = Body::from("hit omni");
-                },
-                (&Method::POST, "/echo") => {
-                    // we'll be back
-                },
-                _ => {
-                    *response.status_mut() = StatusCode::NOT_FOUND;
-                },
-            };
+                let transport = WebSocketTransport::new(socket);
+                let mut mux = Multiplexer::new(transport);
 
-            Box::new(future::ok(response)) as BoxFut
-        })
-    };
+                let id = Uuid::new_v4();
 
-    let server = Server::bind(&addr)
-        .serve(service)
-        .map_err(|e| eprintln!("server error: {}", e));
+                let handshake_string = json!({
+                    "type": "complete-handshake",
+                    "id": id,
+                }).to_string();
 
-    // Run this server for... forever!
-    hyper::rt::spawn(server);
+                println!("{:?}", handshake_string);
+
+                mux.send_control_message(handshake_string.as_bytes().to_vec());
+
+                //mux.sendControlMessage(encodeObject({
+                //  type: 'complete-handshake',
+                //  id,
+                //}))
+
+                //let (tx, rx) = socket.split();
+
+                //let f = tx 
+                //    .send(Message::text("Hi there"))
+                //    .map(|_| ())
+                //    .map_err(|_| ());
+
+                ////let x: i32 = f;
+
+                //warp::spawn(f);
+
+                //rx.map_err(|_| {})
+                //.for_each(|msg| {
+                //    println!("{:?}", msg);
+                //    Ok(())
+                //})
+                futures::future::ok(())
+            })
+        });
+
+    let index = warp::path::end().map(|| {
+        warp::reply::html("<h1>Hi there</h1>")
+    });
+
+    let routes = index.or(omnis);
+
+    warp::serve(routes)
+        .run(([127, 0, 0, 1], 9001));
 }

@@ -5,9 +5,8 @@ authors = ["Anders Pitman <tapitman11@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-hyper = "0.12"
-futures = "0.1"
-tokio = "0.1"
 omnistreams = { path = "../omnistreams/omnistreams-rs" }
-http_tester = { path = "../http-tester" }
-websocket = "0.22"
+futures = "0.1"
+warp = "0.1"
+serde_json = "1.0"
+uuid = { version = "0.7", features = ["serde", "v4"] }
