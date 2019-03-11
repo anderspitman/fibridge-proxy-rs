@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 use warp::{self, Filter};
 use warp::filters::ws::{Message, WebSocket};
 use futures::{Future, Stream, Sink};
@@ -9,6 +11,7 @@ use uuid::Uuid;
 type OmniMessage = Vec<u8>;
 type MessageRx = mpsc::UnboundedReceiver<OmniMessage>;
 type MessageTx = mpsc::UnboundedSender<OmniMessage>;
+type Responses = Arc<Mutex<HashMap<String, i32>>>;
 
 struct WebSocketTransport {
     out_tx: MessageTx,
@@ -62,6 +65,8 @@ impl Transport for WebSocketTransport {
 }
 
 fn main() {
+    let responses = Arc::new(Mutex::new(HashMap::new()));
+
     let omnis = warp::path("omnistreams")
         .and(warp::ws2())
         .map(|ws: warp::ws::Ws2| {
@@ -89,7 +94,7 @@ fn main() {
                         MultiplexerEvent::ControlMessage(control_message) => {
                             println!("got control message: {:?}", control_message);
                         }
-                        MultiplexerEvent::Conduit(producer) => {
+                        MultiplexerEvent::Conduit(_producer) => {
                         }
                     }
                     Ok(())
@@ -101,8 +106,11 @@ fn main() {
 
     let download = warp::path::param()
         .and(warp::path::param())
-        .map(|id: String, filename: String| {
+        .map(move |id: String, filename: String| {
             println!("id: {}, filename: {}", id, filename);
+
+            responses.lock().expect("get lock").insert(id, filename);
+
             "hi there"
         });
 
