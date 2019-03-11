@@ -2,7 +2,7 @@ use warp::{self, Filter};
 use warp::filters::ws::{Message, WebSocket};
 use futures::{Future, Stream, Sink};
 use futures::sync::mpsc;
-use omnistreams::{Multiplexer, Transport};
+use omnistreams::{Multiplexer, MultiplexerEvent, EventEmitter, Transport};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -26,7 +26,6 @@ impl WebSocketTransport {
 
         let out_task = out_rx.map_err(|_e| ())
             .map(|omni_message| {
-                println!("{:?}", omni_message);
                 Message::binary(omni_message)
             })
             .forward(ws_sink)
@@ -39,8 +38,7 @@ impl WebSocketTransport {
 
         let in_task = ws_stream.map_err(|_e| ())
             .map(|ws_message| {
-                println!("ws_message: {:?}", ws_message);
-                vec![0, 0, 65]
+                ws_message.as_bytes().to_vec()
             })
             .forward(in_tx)
             .map(|_| ());
@@ -56,7 +54,6 @@ impl WebSocketTransport {
 
 impl Transport for WebSocketTransport {
     fn send(&mut self, message: OmniMessage) {
-        println!("sendy");
         self.out_tx.unbounded_send(message).expect("ws transport send");
     }
     fn messages(&mut self) -> Option<mpsc::UnboundedReceiver<OmniMessage>> {
@@ -84,36 +81,38 @@ fn main() {
 
                 mux.send_control_message(handshake_string.as_bytes().to_vec());
 
-                //mux.sendControlMessage(encodeObject({
-                //  type: 'complete-handshake',
-                //  id,
-                //}))
+                let events = mux.events().expect("no events");
 
-                //let (tx, rx) = socket.split();
+                warp::spawn(events.for_each(|event| {
 
-                //let f = tx 
-                //    .send(Message::text("Hi there"))
-                //    .map(|_| ())
-                //    .map_err(|_| ());
+                    match event {
+                        MultiplexerEvent::ControlMessage(control_message) => {
+                            println!("got control message: {:?}", control_message);
+                        }
+                        MultiplexerEvent::Conduit(producer) => {
+                        }
+                    }
+                    Ok(())
+                }));
 
-                ////let x: i32 = f;
-
-                //warp::spawn(f);
-
-                //rx.map_err(|_| {})
-                //.for_each(|msg| {
-                //    println!("{:?}", msg);
-                //    Ok(())
-                //})
                 futures::future::ok(())
             })
+        });
+
+    let download = warp::path::param()
+        .and(warp::path::param())
+        .map(|id: String, filename: String| {
+            println!("id: {}, filename: {}", id, filename);
+            "hi there"
         });
 
     let index = warp::path::end().map(|| {
         warp::reply::html("<h1>Hi there</h1>")
     });
 
-    let routes = index.or(omnis);
+    let routes = index
+        .or(omnis)
+        .or(download);
 
     warp::serve(routes)
         .run(([127, 0, 0, 1], 9001));
