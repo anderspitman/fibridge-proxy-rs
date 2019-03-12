@@ -3,6 +3,7 @@ mod transport;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use warp::{self, Filter};
+use warp::filters::ws::{WebSocket};
 use futures::{Stream};
 use omnistreams::{Multiplexer, MultiplexerEvent, EventEmitter};
 use serde_json::json;
@@ -11,6 +12,44 @@ use transport::WebSocketTransport;
 
 //type Responses = Arc<Mutex<HashMap<String, i32>>>;
 
+struct HosterManager {
+}
+
+impl HosterManager {
+    fn new(ws: WebSocket) -> Self {
+
+        let transport = WebSocketTransport::new(ws);
+        let mut mux = Multiplexer::new(transport);
+
+        let id = Uuid::new_v4();
+
+        let handshake_string = json!({
+            "type": "complete-handshake",
+            "id": id,
+        }).to_string();
+
+        println!("{:?}", handshake_string);
+
+        mux.send_control_message(handshake_string.as_bytes().to_vec());
+
+        let events = mux.events().expect("no events");
+
+        warp::spawn(events.for_each(|event| {
+
+            match event {
+                MultiplexerEvent::ControlMessage(control_message) => {
+                    println!("got control message: {:?}", control_message);
+                }
+                MultiplexerEvent::Conduit(_producer) => {
+                }
+            }
+            Ok(())
+        }));
+
+        Self {
+        }
+    }
+}
 
 fn main() {
     let responses = Arc::new(Mutex::new(HashMap::new()));
@@ -19,34 +58,8 @@ fn main() {
         .and(warp::ws2())
         .map(|ws: warp::ws::Ws2| {
             ws.on_upgrade(|socket| {
-
-                let transport = WebSocketTransport::new(socket);
-                let mut mux = Multiplexer::new(transport);
-
-                let id = Uuid::new_v4();
-
-                let handshake_string = json!({
-                    "type": "complete-handshake",
-                    "id": id,
-                }).to_string();
-
-                println!("{:?}", handshake_string);
-
-                mux.send_control_message(handshake_string.as_bytes().to_vec());
-
-                let events = mux.events().expect("no events");
-
-                warp::spawn(events.for_each(|event| {
-
-                    match event {
-                        MultiplexerEvent::ControlMessage(control_message) => {
-                            println!("got control message: {:?}", control_message);
-                        }
-                        MultiplexerEvent::Conduit(_producer) => {
-                        }
-                    }
-                    Ok(())
-                }));
+                
+                let _hoster = HosterManager::new(socket);
 
                 futures::future::ok(())
             })
