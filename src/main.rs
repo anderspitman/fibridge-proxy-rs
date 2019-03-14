@@ -4,15 +4,19 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use warp::{self, Filter};
 use warp::filters::ws::{WebSocket};
+use warp::http::Response;
 use futures::{Stream};
+use futures::sync::mpsc;
 use omnistreams::{Multiplexer, MultiplexerEvent, EventEmitter};
 use serde_json::json;
 use uuid::Uuid;
 use transport::WebSocketTransport;
+use hyper::Body;
 
-//type Responses = Arc<Mutex<HashMap<String, i32>>>;
+type HosterManagers = Arc<Mutex<HashMap<String, mpsc::UnboundedReceiver<Vec<u8>>>>>;
 
 struct HosterManager {
+    id: String,
 }
 
 impl HosterManager {
@@ -47,19 +51,29 @@ impl HosterManager {
         }));
 
         Self {
+            id: id.to_string(),
         }
     }
 }
 
 fn main() {
-    let responses = Arc::new(Mutex::new(HashMap::new()));
+    let hoster_managers = Arc::new(Mutex::new(HashMap::new()));
+    let hoster_managers_clone = hoster_managers.clone();
 
     let omnis = warp::path("omnistreams")
+        .map(move || hoster_managers.clone())
         .and(warp::ws2())
-        .map(|ws: warp::ws::Ws2| {
-            ws.on_upgrade(|socket| {
+        .map(|hoster_managers: HosterManagers, ws: warp::ws::Ws2| {
+            ws.on_upgrade(move |socket| {
+
+                let (tx, rx) = mpsc::unbounded::<Vec<u8>>();
                 
-                let _hoster = HosterManager::new(socket);
+                let hoster = HosterManager::new(socket);
+
+                tx.unbounded_send("Hi there".as_bytes().to_vec());
+                tx.unbounded_send("Ya fuzzy little manpeach".as_bytes().to_vec());
+
+                hoster_managers.lock().expect("get lock").insert(hoster.id, rx);
 
                 futures::future::ok(())
             })
@@ -70,9 +84,20 @@ fn main() {
         .map(move |id: String, filename: String| {
             println!("id: {}, filename: {}", id, filename);
 
-            responses.lock().expect("get lock").insert(id, filename);
+            let stream = hoster_managers_clone.lock()
+                .expect("get lock").remove(&id)
+                .expect("get hoster manager");
 
-            "hi there"
+            let stream = stream.map_err(|_e| {
+                "stream fail"
+            });
+
+            // See if there's a way to do this without importing hyper
+            // directly.
+            let body = Body::wrap_stream(stream);
+
+            Response::builder()
+                .body(body)
         });
 
     let index = warp::path::end().map(|| {

@@ -10,3 +10,4 @@ futures = "0.1"
 warp = "0.1"
 serde_json = "1.0"
 uuid = { version = "0.7", features = ["serde", "v4"] }
+hyper = "0.12"
