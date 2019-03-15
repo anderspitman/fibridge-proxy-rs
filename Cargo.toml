@@ -8,6 +8,7 @@ edition = "2018"
 omnistreams = { path = "../omnistreams/omnistreams-rs" }
 futures = "0.1"
 warp = "0.1"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 hyper = "0.12"

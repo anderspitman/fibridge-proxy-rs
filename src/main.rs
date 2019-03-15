@@ -8,12 +8,19 @@ use warp::http::Response;
 use futures::{Stream};
 use futures::sync::mpsc;
 use omnistreams::{Multiplexer, MultiplexerEvent, EventEmitter, Producer, ProducerEvent};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 use self::transport::WebSocketTransport;
 use hyper::Body;
 
 type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ConduitMetadata {
+    id: usize,
+    size: usize,
+}
 
 struct HosterManager {
     id: String,
@@ -50,8 +57,12 @@ impl HosterManager {
                 MultiplexerEvent::ControlMessage(control_message) => {
                     println!("got control message: {:?}", std::str::from_utf8(&control_message).expect("parse utf"));
                 }
-                MultiplexerEvent::Conduit(mut producer) => {
+                MultiplexerEvent::Conduit(mut producer, metadata) => {
                     println!("got producer");
+
+                    let md: ConduitMetadata = serde_json::from_slice(&metadata).expect("parse metadata");
+
+                    println!("{:?}", md);
 
                     let events = producer.event_stream().expect("producer events");
 
