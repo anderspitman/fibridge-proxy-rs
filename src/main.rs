@@ -13,11 +13,13 @@ use uuid::Uuid;
 use self::transport::WebSocketTransport;
 use hyper::Body;
 
-type HosterManagers = Arc<Mutex<HashMap<String, mpsc::UnboundedReceiver<Vec<u8>>>>>;
+type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
 
 struct HosterManager {
     id: String,
     response_tx: mpsc::UnboundedSender<Vec<u8>>,
+    next_request_id: usize,
+    mux: Multiplexer,
 }
 
 impl HosterManager {
@@ -46,9 +48,10 @@ impl HosterManager {
 
             match event {
                 MultiplexerEvent::ControlMessage(control_message) => {
-                    println!("got control message: {:?}", control_message);
+                    println!("got control message: {:?}", std::str::from_utf8(&control_message).expect("parse utf"));
                 }
                 MultiplexerEvent::Conduit(_producer) => {
+                    println!("got producer");
                 }
             }
             Ok(())
@@ -57,7 +60,31 @@ impl HosterManager {
         Self {
             id: id.to_string(),
             response_tx,
+            next_request_id: 0,
+            mux,
         }
+    }
+
+    fn next_request_id(&mut self) -> usize {
+        let id = self.next_request_id;
+        self.next_request_id += 1;
+        id
+    }
+
+    fn process_request(&mut self, filename: String) -> String {
+
+        let request_id = self.next_request_id();
+
+        println!("filename: {}", filename);
+
+        let request = json!({
+            "type": "GET",
+            "url": format!("/{}", filename),
+            "requestId": request_id,
+        }).to_string();
+
+        self.mux.send_control_message(request.as_bytes().to_vec());
+        "Hi there".into()
     }
 }
 
@@ -75,7 +102,7 @@ fn main() {
                 
                 let hoster = HosterManager::new(socket, tx);
 
-                hoster_managers.lock().expect("get lock").insert(hoster.id, rx);
+                hoster_managers.lock().expect("get lock").insert(hoster.id.clone(), hoster);
 
                 futures::future::ok(())
             })
@@ -86,20 +113,25 @@ fn main() {
         .map(move |id: String, filename: String| {
             println!("id: {}, filename: {}", id, filename);
 
-            let stream = hoster_managers_clone.lock()
-                .expect("get lock").remove(&id)
-                .expect("get hoster manager");
+            //let stream = hoster_managers_clone.lock()
+            //    .expect("get lock").remove(&id)
+            //    .expect("get hoster manager");
 
-            let stream = stream.map_err(|_e| {
-                "stream fail"
-            });
+            //let stream = stream.map_err(|_e| {
+            //    "stream fail"
+            //});
 
-            // See if there's a way to do this without importing hyper
-            // directly.
-            let body = Body::wrap_stream(stream);
+            //// See if there's a way to do this without importing hyper
+            //// directly.
+            //let body = Body::wrap_stream(stream);
 
-            Response::builder()
-                .body(body)
+            //Response::builder()
+            //    .body(body)
+
+            let mut lock = hoster_managers_clone.lock().expect("get lock");
+            let manager = lock.get_mut(&id).expect("get hoster manager");
+
+            manager.process_request(filename)
         });
 
     let index = warp::path::end().map(|| {
