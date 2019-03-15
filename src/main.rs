@@ -44,8 +44,6 @@ impl HosterManager {
             "id": id,
         }).to_string();
 
-        println!("{:?}", handshake_string);
-
         mux.send_control_message(handshake_string.as_bytes().to_vec());
 
         let events = mux.events().expect("no events");
@@ -60,10 +58,10 @@ impl HosterManager {
                     println!("got control message: {:?}", std::str::from_utf8(&control_message).expect("parse utf"));
                 }
                 MultiplexerEvent::Conduit(mut producer, metadata) => {
-                    println!("got producer");
 
                     let md: ConduitMetadata = serde_json::from_slice(&metadata).expect("parse metadata");
 
+                    println!("Create conduit");
                     println!("{:?}", md);
 
                     let request_id = md.id;
@@ -83,7 +81,6 @@ impl HosterManager {
                                 response_tx.unbounded_send(data).expect("response tx send");
                             },
                             ProducerEvent::End => {
-                                println!("it ended");
                             },
                         }
                         Ok(())
@@ -123,12 +120,7 @@ impl HosterManager {
         
         let (tx, rx) = mpsc::unbounded::<Vec<u8>>();
 
-        //tx.unbounded_send("yolo mojo".as_bytes().to_vec());
-        //tx.unbounded_send("Ya fuzzy little manpeach".as_bytes().to_vec());
-
         self.response_txs.lock().expect("get lock").insert(request_id, tx);
-
-        //"Hi there".into()
 
         let rx = rx.map_err(|_e| {
             "stream fail"
@@ -164,22 +156,6 @@ fn main() {
     let download = warp::path::param()
         .and(warp::path::param())
         .map(move |id: String, filename: String| {
-            println!("id: {}, filename: {}", id, filename);
-
-            //let stream = hoster_managers_clone.lock()
-            //    .expect("get lock").remove(&id)
-            //    .expect("get hoster manager");
-
-            //let stream = stream.map_err(|_e| {
-            //    "stream fail"
-            //});
-
-            //// See if there's a way to do this without importing hyper
-            //// directly.
-            //let body = Body::wrap_stream(stream);
-
-            //Response::builder()
-            //    .body(body)
 
             let mut lock = hoster_managers_clone.lock().expect("get lock");
             let manager = lock.get_mut(&id).expect("get hoster manager");
