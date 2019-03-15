@@ -7,7 +7,7 @@ use warp::filters::ws::{WebSocket};
 use warp::http::Response;
 use futures::{Stream};
 use futures::sync::mpsc;
-use omnistreams::{Multiplexer, MultiplexerEvent, EventEmitter};
+use omnistreams::{Multiplexer, MultiplexerEvent, EventEmitter, Producer, ProducerEvent};
 use serde_json::json;
 use uuid::Uuid;
 use self::transport::WebSocketTransport;
@@ -50,8 +50,24 @@ impl HosterManager {
                 MultiplexerEvent::ControlMessage(control_message) => {
                     println!("got control message: {:?}", std::str::from_utf8(&control_message).expect("parse utf"));
                 }
-                MultiplexerEvent::Conduit(_producer) => {
+                MultiplexerEvent::Conduit(mut producer) => {
                     println!("got producer");
+
+                    let events = producer.event_stream().expect("producer events");
+
+                    producer.request(1);
+
+                    warp::spawn(events.for_each(move |event| {
+
+                        match event {
+                            ProducerEvent::Data(data) => {
+                                producer.request(1);
+                            },
+                            ProducerEvent::End => {
+                            },
+                        }
+                        Ok(())
+                    }));
                 }
             }
             Ok(())
