@@ -10,7 +10,7 @@ use futures::sync::mpsc;
 use omnistreams::{Multiplexer, MultiplexerEvent, EventEmitter};
 use serde_json::json;
 use uuid::Uuid;
-use transport::WebSocketTransport;
+use self::transport::WebSocketTransport;
 use hyper::Body;
 
 type HosterManagers = Arc<Mutex<HashMap<String, mpsc::UnboundedReceiver<Vec<u8>>>>>;
