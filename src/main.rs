@@ -17,10 +17,14 @@ type HosterManagers = Arc<Mutex<HashMap<String, mpsc::UnboundedReceiver<Vec<u8>>
 
 struct HosterManager {
     id: String,
+    response_tx: mpsc::UnboundedSender<Vec<u8>>,
 }
 
 impl HosterManager {
-    fn new(ws: WebSocket) -> Self {
+    fn new(ws: WebSocket, response_tx: mpsc::UnboundedSender<Vec<u8>>) -> Self {
+
+        response_tx.unbounded_send("Hi there".as_bytes().to_vec());
+        response_tx.unbounded_send("Ya fuzzy little manpeach".as_bytes().to_vec());
 
         let transport = WebSocketTransport::new(ws);
         let mut mux = Multiplexer::new(transport);
@@ -38,7 +42,7 @@ impl HosterManager {
 
         let events = mux.events().expect("no events");
 
-        warp::spawn(events.for_each(|event| {
+        warp::spawn(events.for_each(move |event| {
 
             match event {
                 MultiplexerEvent::ControlMessage(control_message) => {
@@ -52,6 +56,7 @@ impl HosterManager {
 
         Self {
             id: id.to_string(),
+            response_tx,
         }
     }
 }
@@ -68,10 +73,7 @@ fn main() {
 
                 let (tx, rx) = mpsc::unbounded::<Vec<u8>>();
                 
-                let hoster = HosterManager::new(socket);
-
-                tx.unbounded_send("Hi there".as_bytes().to_vec());
-                tx.unbounded_send("Ya fuzzy little manpeach".as_bytes().to_vec());
+                let hoster = HosterManager::new(socket, tx);
 
                 hoster_managers.lock().expect("get lock").insert(hoster.id, rx);
 
