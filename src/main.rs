@@ -15,6 +15,8 @@ use self::transport::WebSocketTransport;
 use hyper::Body;
 
 type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
+type ResponseTx = mpsc::UnboundedSender<Vec<u8>>;
+type ResponseTxs = Arc<Mutex<HashMap<usize, ResponseTx>>>;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ConduitMetadata {
@@ -24,16 +26,13 @@ struct ConduitMetadata {
 
 struct HosterManager {
     id: String,
-    response_tx: mpsc::UnboundedSender<Vec<u8>>,
     next_request_id: usize,
     mux: Multiplexer,
+    response_txs: ResponseTxs,
 }
 
 impl HosterManager {
-    fn new(ws: WebSocket, response_tx: mpsc::UnboundedSender<Vec<u8>>) -> Self {
-
-        response_tx.unbounded_send("Hi there".as_bytes().to_vec());
-        response_tx.unbounded_send("Ya fuzzy little manpeach".as_bytes().to_vec());
+    fn new(ws: WebSocket) -> Self {
 
         let transport = WebSocketTransport::new(ws);
         let mut mux = Multiplexer::new(transport);
@@ -51,6 +50,9 @@ impl HosterManager {
 
         let events = mux.events().expect("no events");
 
+        let response_txs: ResponseTxs = Arc::new(Mutex::new(HashMap::new()));
+        let response_txs_clone = response_txs.clone();
+
         warp::spawn(events.for_each(move |event| {
 
             match event {
@@ -64,6 +66,11 @@ impl HosterManager {
 
                     println!("{:?}", md);
 
+                    let request_id = md.id;
+
+                    let mut lock = response_txs_clone.lock().expect("get lock");
+                    let response_tx = lock.remove(&request_id).expect("removed tx");
+
                     let events = producer.event_stream().expect("producer events");
 
                     producer.request(1);
@@ -73,8 +80,10 @@ impl HosterManager {
                         match event {
                             ProducerEvent::Data(data) => {
                                 producer.request(1);
+                                response_tx.unbounded_send(data).expect("response tx send");
                             },
                             ProducerEvent::End => {
+                                println!("it ended");
                             },
                         }
                         Ok(())
@@ -86,9 +95,9 @@ impl HosterManager {
 
         Self {
             id: id.to_string(),
-            response_tx,
             next_request_id: 0,
             mux,
+            response_txs,
         }
     }
 
@@ -98,7 +107,7 @@ impl HosterManager {
         id
     }
 
-    fn process_request(&mut self, filename: String) -> String {
+    fn process_request(&mut self, filename: String) -> Response<Body> {
 
         let request_id = self.next_request_id();
 
@@ -111,7 +120,26 @@ impl HosterManager {
         }).to_string();
 
         self.mux.send_control_message(request.as_bytes().to_vec());
-        "Hi there".into()
+        
+        let (tx, rx) = mpsc::unbounded::<Vec<u8>>();
+
+        //tx.unbounded_send("yolo mojo".as_bytes().to_vec());
+        //tx.unbounded_send("Ya fuzzy little manpeach".as_bytes().to_vec());
+
+        self.response_txs.lock().expect("get lock").insert(request_id, tx);
+
+        //"Hi there".into()
+
+        let rx = rx.map_err(|_e| {
+            "stream fail"
+        });
+
+        // See if there's a way to do this without importing hyper
+        // directly.
+        let body = Body::wrap_stream(rx);
+
+        Response::builder()
+            .body(body).expect("response")
     }
 }
 
@@ -124,10 +152,8 @@ fn main() {
         .and(warp::ws2())
         .map(|hoster_managers: HosterManagers, ws: warp::ws::Ws2| {
             ws.on_upgrade(move |socket| {
-
-                let (tx, rx) = mpsc::unbounded::<Vec<u8>>();
                 
-                let hoster = HosterManager::new(socket, tx);
+                let hoster = HosterManager::new(socket);
 
                 hoster_managers.lock().expect("get lock").insert(hoster.id.clone(), hoster);
 
