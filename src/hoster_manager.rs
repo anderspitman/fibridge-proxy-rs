@@ -2,7 +2,6 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use futures::sync::{mpsc, oneshot};
 use futures::{Stream};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 use omnistreams::{
@@ -81,7 +80,6 @@ impl HosterManager {
                     let md: Value = serde_json::from_slice(&metadata).expect("parse metadata");
 
                     println!("Create conduit");
-                    println!("{:?}", std::str::from_utf8(&metadata).unwrap());
                     println!("{:?}", md);
 
                     let request_id = md["id"].as_u64().expect("parse id") as usize;
@@ -124,7 +122,6 @@ impl HosterManager {
                                 ;
                         },
                         _ => {
-
                             builder.header("Content-Length", size);
                         },
                     }
