@@ -1,21 +1,22 @@
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use futures::sync::mpsc;
+use futures::sync::{mpsc, oneshot};
 use futures::{Stream};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use uuid::Uuid;
 use omnistreams::{
     Multiplexer, MultiplexerEvent, EventEmitter, Producer, ProducerEvent,
     Streamer, CancelReason,
 };
 use super::transport::WebSocketTransport;
-use warp::http::Response;
+use warp::http::{Response};
 use hyper::Body;
 use warp::filters::ws::{WebSocket};
 
 
-type ResponseTx = mpsc::UnboundedSender<Vec<u8>>;
+//type ResponseTx = mpsc::UnboundedSender<Vec<u8>>;
+type ResponseTx = oneshot::Sender<Response<Body>>;
 type ResponseTxs = Arc<Mutex<HashMap<usize, ResponseTx>>>;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -55,7 +56,30 @@ impl HosterManager {
 
             match event {
                 MultiplexerEvent::ControlMessage(control_message) => {
-                    println!("got control message: {:?}", std::str::from_utf8(&control_message).expect("parse utf"));
+                    let message: Value = serde_json::from_slice(&control_message)
+                        .expect("parse control message");
+
+                    println!("control message");
+                    println!("{:?}", message);
+
+                    if message["type"] == "error" {
+                        println!("error");
+
+                        match &message["requestId"] {
+                            Value::Number(request_id) => {
+                                let request_id = request_id.as_u64().expect("parse u64") as usize;
+                                let mut lock = response_txs_clone.lock().expect("get lock");
+                                let response_tx = lock.remove(&request_id).expect("removed tx");
+
+                                let response = Response::builder()
+                                    .status(404)
+                                    .body("Not found".into()).expect("error response");
+
+                                response_tx.send(response).unwrap();
+                            },
+                            _ => (),
+                        }
+                    }
                 }
                 MultiplexerEvent::Conduit(mut producer, metadata) => {
 
@@ -66,8 +90,22 @@ impl HosterManager {
 
                     let request_id = md.id;
 
+                    let (stream_tx, stream_rx) = mpsc::unbounded::<Vec<u8>>();
+                    let stream_rx = stream_rx.map_err(|_e| {
+                        "stream fail"
+                    });
+
+                    // See if there's a way to do this without importing hyper
+                    // directly.
+                    let body = Body::wrap_stream(stream_rx);
+
+                    let response = Response::builder()
+                        .body(body).expect("response");
+
+
                     let mut lock = response_txs_clone.lock().expect("get lock");
                     let response_tx = lock.remove(&request_id).expect("removed tx");
+                    response_tx.send(response).unwrap();
 
                     let events = producer.event_stream().expect("producer events");
 
@@ -78,7 +116,7 @@ impl HosterManager {
                         match event {
                             ProducerEvent::Data(data) => {
                                 producer.request(1);
-                                match response_tx.unbounded_send(data) {
+                                match stream_tx.unbounded_send(data) {
                                     Ok(_) => {
                                     },
                                     Err(_) => {
@@ -115,7 +153,7 @@ impl HosterManager {
         id
     }
 
-    pub fn process_request(&mut self, filename: String) -> Response<Body> {
+    pub fn process_request(&mut self, filename: String) -> oneshot::Receiver<Response<Body>> {
 
         let request_id = self.next_request_id();
 
@@ -129,19 +167,11 @@ impl HosterManager {
 
         self.mux.send_control_message(request.as_bytes().to_vec());
         
-        let (tx, rx) = mpsc::unbounded::<Vec<u8>>();
 
-        self.response_txs.lock().expect("get lock").insert(request_id, tx);
+        let (response_tx, response_rx) = oneshot::channel();
 
-        let rx = rx.map_err(|_e| {
-            "stream fail"
-        });
+        self.response_txs.lock().expect("get lock").insert(request_id, response_tx);
 
-        // See if there's a way to do this without importing hyper
-        // directly.
-        let body = Body::wrap_stream(rx);
-
-        Response::builder()
-            .body(body).expect("response")
+        response_rx
     }
 }

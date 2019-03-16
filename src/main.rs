@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use warp::{self, Filter};
 use hoster_manager::HosterManager;
+use futures::Future;
 
 type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
 
@@ -29,12 +30,13 @@ fn main() {
 
     let download = warp::path::param()
         .and(warp::path::param())
-        .map(move |id: String, filename: String| {
+        .and_then(move |id: String, filename: String| {
 
             let mut lock = hoster_managers_clone.lock().expect("get lock");
             let manager = lock.get_mut(&id).expect("get hoster manager");
 
             manager.process_request(filename)
+                .map_err(|_e| warp::reject::not_found())
         });
 
     let index = warp::path::end().map(|| {
