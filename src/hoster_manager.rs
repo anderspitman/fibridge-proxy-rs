@@ -5,7 +5,10 @@ use futures::{Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
-use omnistreams::{Multiplexer, MultiplexerEvent, EventEmitter, Producer, ProducerEvent};
+use omnistreams::{
+    Multiplexer, MultiplexerEvent, EventEmitter, Producer, ProducerEvent,
+    Streamer, CancelReason,
+};
 use super::transport::WebSocketTransport;
 use warp::http::Response;
 use hyper::Body;
@@ -75,7 +78,14 @@ impl HosterManager {
                         match event {
                             ProducerEvent::Data(data) => {
                                 producer.request(1);
-                                response_tx.unbounded_send(data).expect("response tx send");
+                                match response_tx.unbounded_send(data) {
+                                    Ok(_) => {
+                                    },
+                                    Err(_) => {
+                                        eprintln!("dc");
+                                        producer.cancel(CancelReason::Disconnected);
+                                    }
+                                };
                             },
                             ProducerEvent::End => {
                             },
