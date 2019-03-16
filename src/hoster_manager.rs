@@ -153,19 +153,26 @@ impl HosterManager {
         id
     }
 
-    pub fn process_request(&mut self, filename: String) -> oneshot::Receiver<Response<Body>> {
+    pub fn process_request(&mut self, filename: String, range_header: String) -> oneshot::Receiver<Response<Body>> {
 
         let request_id = self.next_request_id();
 
         println!("filename: {}", filename);
 
-        let request = json!({
+
+        let mut request = json!({
             "type": "GET",
             "url": format!("/{}", filename),
             "requestId": request_id,
-        }).to_string();
+        });
 
-        self.mux.send_control_message(request.as_bytes().to_vec());
+        let range = parse_range_header(&range_header);
+
+        if range.is_some() {
+            request["range"] = range.unwrap();
+        }
+
+        self.mux.send_control_message(request.to_string().as_bytes().to_vec());
         
 
         let (response_tx, response_rx) = oneshot::channel();
@@ -173,5 +180,30 @@ impl HosterManager {
         self.response_txs.lock().expect("get lock").insert(request_id, response_tx);
 
         response_rx
+    }
+}
+
+fn parse_range_header(header: &str) -> Option<Value> {
+    if header == "" {
+        return None;
+    }
+    else {
+
+        // TODO: error handling
+        let parts: Vec<&str> = header.split('=').collect();
+        let range_str: Vec<&str> = parts[1].split('-').collect();
+        let start = range_str[0].parse::<usize>().expect("parse range start");
+        let end_str = range_str[1];
+
+        let mut range = json!({
+            "start": start,
+        });
+
+        if end_str.len() > 0 {
+            let end = end_str.parse::<usize>().expect("parse range end");
+            range["end"] = json!(end);
+        }
+
+        Some(range)
     }
 }
