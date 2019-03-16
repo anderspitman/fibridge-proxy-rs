@@ -19,11 +19,6 @@ use warp::filters::ws::{WebSocket};
 type ResponseTx = oneshot::Sender<Response<Body>>;
 type ResponseTxs = Arc<Mutex<HashMap<usize, ResponseTx>>>;
 
-#[derive(Serialize, Deserialize, Debug)]
-struct ConduitMetadata {
-    id: usize,
-    size: usize,
-}
 
 pub struct HosterManager {
     id: String,
@@ -83,12 +78,13 @@ impl HosterManager {
                 }
                 MultiplexerEvent::Conduit(mut producer, metadata) => {
 
-                    let md: ConduitMetadata = serde_json::from_slice(&metadata).expect("parse metadata");
+                    let md: Value = serde_json::from_slice(&metadata).expect("parse metadata");
 
                     println!("Create conduit");
+                    println!("{:?}", std::str::from_utf8(&metadata).unwrap());
                     println!("{:?}", md);
 
-                    let request_id = md.id;
+                    let request_id = md["id"].as_u64().expect("parse id") as usize;
 
                     let (stream_tx, stream_rx) = mpsc::unbounded::<Vec<u8>>();
                     let stream_rx = stream_rx.map_err(|_e| {
@@ -99,7 +95,43 @@ impl HosterManager {
                     // directly.
                     let body = Body::wrap_stream(stream_rx);
 
-                    let response = Response::builder()
+                    let mut builder = Response::builder();
+
+                    let size = md["size"].as_u64().expect("parse size");
+
+                    match md.get("range") {
+                        Some(Value::Object(range)) => {
+                            let start = range["start"].as_u64().expect("partse start");
+
+                            println!("range: {:?}", range);
+                            let end = match range.get("end") {
+                                Some(Value::Number(end)) => {
+                                    end.as_u64().expect("parse end")
+                                },
+                                _ => size - 1,
+                            };
+
+                            let len = end - start;
+
+                            let content_range = format!("bytes {}-{}/{}", start, end, size);
+
+                            println!("len: {}", len);
+                            builder
+                                .status(206)
+                                .header("Content-Range", content_range)
+                                // TODO: why is this +1?
+                                .header("Content-Length", len + 1)
+                                ;
+                        },
+                        _ => {
+
+                            builder.header("Content-Length", size);
+                        },
+                    }
+
+                    let response = builder
+                        .header("Accept-Ranges", "bytes")
+                        .header("Content-Type", "application/octet-stream")
                         .body(body).expect("response");
 
 
