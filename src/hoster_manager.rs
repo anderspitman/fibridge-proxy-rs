@@ -99,27 +99,25 @@ impl HosterManager {
 
                     match md.get("range") {
                         Some(Value::Object(range)) => {
-                            let start = range["start"].as_u64().expect("partse start");
+                            let start = range["start"].as_u64().expect("parse start");
 
                             println!("range: {:?}", range);
                             let end = match range.get("end") {
                                 Some(Value::Number(end)) => {
                                     end.as_u64().expect("parse end")
                                 },
-                                _ => size - 1,
+                                _ => size,
                             };
 
                             let len = end - start;
 
-                            let content_range = format!("bytes {}-{}/{}", start, end, size);
+                            // Need to subtract one from end because HTTP ranges are inclusive
+                            let content_range = format!("bytes {}-{}/{}", start, end - 1, size);
 
-                            println!("len: {}", len);
                             builder
                                 .status(206)
                                 .header("Content-Range", content_range)
-                                // TODO: why is this +1?
-                                .header("Content-Length", len + 1)
-                                ;
+                                .header("Content-Length", len);
                         },
                         _ => {
                             builder.header("Content-Length", size);
@@ -229,7 +227,8 @@ fn parse_range_header(header: &str) -> Option<Value> {
         });
 
         if end_str.len() > 0 {
-            let end = end_str.parse::<usize>().expect("parse range end");
+            // Need to add one because HTTP ranges are inclusive
+            let end = 1 + end_str.parse::<usize>().expect("parse range end");
             range["end"] = json!(end);
         }
 
