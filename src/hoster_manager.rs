@@ -134,7 +134,7 @@ impl HosterManager {
                     response_tx.send(response).unwrap();
 
                     let consumer = SinkAdapter::new(stream_tx);
-                    producer.pipe(consumer);
+                    producer.pipe_into(consumer);
                 }
             }
             Ok(())
