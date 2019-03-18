@@ -5,8 +5,7 @@ use futures::{Stream};
 use serde_json::{json, Value};
 use uuid::Uuid;
 use omnistreams::{
-    Multiplexer, MultiplexerEvent, EventEmitter, Producer, ProducerEvent,
-    Streamer, CancelReason,
+    Multiplexer, MultiplexerEvent, EventEmitter, Producer, SinkAdapter,
 };
 use super::transport::WebSocketTransport;
 use warp::http::{Response};
@@ -75,7 +74,7 @@ impl HosterManager {
                         }
                     }
                 }
-                MultiplexerEvent::Conduit(mut producer, metadata) => {
+                MultiplexerEvent::Conduit(producer, metadata) => {
 
                     let md: Value = serde_json::from_slice(&metadata).expect("parse metadata");
 
@@ -134,29 +133,8 @@ impl HosterManager {
                     let response_tx = lock.remove(&request_id).expect("removed tx");
                     response_tx.send(response).unwrap();
 
-                    let events = producer.event_stream().expect("producer events");
-
-                    producer.request(1);
-
-                    warp::spawn(events.for_each(move |event| {
-
-                        match event {
-                            ProducerEvent::Data(data) => {
-                                producer.request(1);
-                                match stream_tx.unbounded_send(data) {
-                                    Ok(_) => {
-                                    },
-                                    Err(_) => {
-                                        eprintln!("dc");
-                                        producer.cancel(CancelReason::Disconnected);
-                                    }
-                                };
-                            },
-                            ProducerEvent::End => {
-                            },
-                        }
-                        Ok(())
-                    }));
+                    let consumer = SinkAdapter::new(stream_tx);
+                    producer.pipe(consumer);
                 }
             }
             Ok(())
