@@ -83,7 +83,7 @@ impl HosterManager {
 
                     let request_id = md["id"].as_u64().expect("parse id") as usize;
 
-                    let (stream_tx, stream_rx) = mpsc::unbounded::<Vec<u8>>();
+                    let (stream_tx, stream_rx) = mpsc::channel::<Vec<u8>>(1);
                     let stream_rx = stream_rx.map_err(|_e| {
                         "stream fail"
                     });
