@@ -1,5 +1,6 @@
 mod transport;
 mod hoster_manager;
+mod stats_conduit;
 
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;

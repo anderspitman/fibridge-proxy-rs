@@ -11,6 +11,7 @@ use super::transport::WebSocketTransport;
 use warp::http::{Response};
 use hyper::Body;
 use warp::filters::ws::{WebSocket};
+use crate::stats_conduit::StatsConduit;
 
 
 //type ResponseTx = mpsc::UnboundedSender<Vec<u8>>;
@@ -131,7 +132,9 @@ impl HosterManager {
                     response_tx.send(response).unwrap();
 
                     let consumer = SinkAdapter::new(stream_tx);
-                    producer.pipe_into(consumer);
+                    producer
+                        .pipe_through(StatsConduit::new(request_id))
+                        .pipe_into(consumer);
                 }
             }
             Ok(())
