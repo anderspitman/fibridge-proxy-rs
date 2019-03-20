@@ -52,11 +52,9 @@ impl HosterManager {
                     let message: Value = serde_json::from_slice(&control_message)
                         .expect("parse control message");
 
-                    println!("control message");
-                    println!("{:?}", message);
+                    println!("{}", message);
 
                     if message["type"] == "error" {
-                        println!("error");
 
                         match &message["requestId"] {
                             Value::Number(request_id) => {
@@ -79,7 +77,7 @@ impl HosterManager {
                     let md: Value = serde_json::from_slice(&metadata).expect("parse metadata");
 
                     println!("Create conduit");
-                    println!("{:?}", md);
+                    println!("{}", md);
 
                     let request_id = md["id"].as_u64().expect("parse id") as usize;
 
@@ -100,7 +98,6 @@ impl HosterManager {
                         Some(Value::Object(range)) => {
                             let start = range["start"].as_u64().expect("parse start");
 
-                            println!("range: {:?}", range);
                             let end = match range.get("end") {
                                 Some(Value::Number(end)) => {
                                     end.as_u64().expect("parse end")
@@ -161,9 +158,6 @@ impl HosterManager {
     pub fn process_request(&mut self, filename: String, range_header: String) -> oneshot::Receiver<Response<Body>> {
 
         let request_id = self.next_request_id();
-
-        println!("filename: {}", filename);
-
 
         let mut request = json!({
             "type": "GET",
