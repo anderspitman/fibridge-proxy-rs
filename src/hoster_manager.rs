@@ -5,12 +5,13 @@ use futures::{Stream};
 use serde_json::{json, Value};
 use uuid::Uuid;
 use omnistreams::{
-    Multiplexer, MultiplexerEvent, EventEmitter, Producer, SinkAdapter,
+    Multiplexer, MultiplexerEvent, EventEmitter, Producer, SinkAdapter, pipe
 };
 use super::transport::WebSocketTransport;
 use warp::http::{Response};
 use hyper::Body;
 use warp::filters::ws::{WebSocket};
+use crate::stats_conduit::StatsConduit;
 
 
 //type ResponseTx = mpsc::UnboundedSender<Vec<u8>>;
@@ -131,7 +132,10 @@ impl HosterManager {
                     response_tx.send(response).unwrap();
 
                     let consumer = SinkAdapter::new(stream_tx);
-                    producer.pipe_into(consumer);
+                    let producer = producer.pipe_through(StatsConduit::new());
+                    // TODO: figure out why I can't use method syntax on this.
+                    //producer.pipe_into(consumer);
+                    pipe(producer, consumer);
                 }
             }
             Ok(())
