@@ -5,8 +5,10 @@ mod stats_conduit;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use warp::{self, Filter};
+use warp::http::{Response};
 use hoster_manager::HosterManager;
 use futures::Future;
+use futures::future::Either;
 
 type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
 
@@ -30,15 +32,27 @@ fn main() {
             })
         });
 
+    // TODO: reduce duplication with non_ranged below
     let ranged = warp::header::<String>("Range")
         .and(warp::path::param())
         .and(warp::path::param())
         .and_then(move |range, id: String, filename: String| {
             let mut lock = range_clone.lock().expect("get lock");
-            let manager = lock.get_mut(&id).expect("get hoster manager");
 
-            manager.process_request(filename, range)
-                .map_err(|_e| warp::reject::not_found())
+            match lock.get_mut(&id) {
+                Some(manager) => {
+                    Either::A(manager.process_request(filename, range)
+                        .map_err(|_e| warp::reject::not_found()))
+                },
+                None => {
+                    // TODO: This still feels super hacky. There's got to be some way to have these
+                    // all be part of the same future.
+                    Either::B(futures::future::ok(Response::builder()
+                            .status(404)
+                            .body("Not found".into())
+                            .expect("error response")))
+                },
+            }
         });
 
     let non_ranged = warp::path::param()
@@ -46,10 +60,21 @@ fn main() {
         .and_then(move |id: String, filename: String| {
 
             let mut lock = hoster_managers_clone.lock().expect("get lock");
-            let manager = lock.get_mut(&id).expect("get hoster manager");
 
-            manager.process_request(filename, "".to_string())
-                .map_err(|_e| warp::reject::not_found())
+            match lock.get_mut(&id) {
+                Some(manager) => {
+                    Either::A(manager.process_request(filename, "".to_string())
+                        .map_err(|_e| warp::reject::not_found()))
+                },
+                None => {
+                    // TODO: This still feels super hacky. There's got to be some way to have these
+                    // all be part of the same future.
+                    Either::B(futures::future::ok(Response::builder()
+                            .status(404)
+                            .body("Not found".into())
+                            .expect("error response")))
+                },
+            }
         });
 
     let download = ranged.or(non_ranged);

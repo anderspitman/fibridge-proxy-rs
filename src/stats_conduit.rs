@@ -10,20 +10,20 @@ pub struct StatsConduit {
 }
 
 impl StatsConduit {
-    pub fn new(request_id: usize) -> Self {
+    pub fn new(_request_id: usize) -> Self {
 
         let mut total_items = 0;
         let mut total_bytes = 0;
 
         let item_counter = MapConduit::new(move |item: Message| {
             total_items += 1;
-            println!("{} items: {}", request_id, total_items);
+            //println!("{} items: {}", request_id, total_items);
             item
         });
 
         let byte_counter = MapConduit::new(move |item: Message| {
             total_bytes += item.len();
-            println!("{} bytes: {}", request_id, total_bytes);
+            //println!("{} bytes: {}", request_id, total_bytes);
             item
         });
 
