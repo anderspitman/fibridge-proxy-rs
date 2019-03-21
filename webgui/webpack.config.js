@@ -5,6 +5,7 @@ module.exports = {
   mode: 'development',
   plugins: [
     new HtmlWebpackPlugin({
+      template: './src/index.html',
       // embed all javascript and css inline in HTML file
       inlineSource: '.(js|css)$'
     }),

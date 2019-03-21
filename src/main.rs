@@ -55,7 +55,7 @@ fn main() {
     let download = ranged.or(non_ranged);
 
     let index = warp::path::end().map(|| {
-        warp::reply::html("<h1>Hi there</h1>")
+        warp::reply::html(include_str!("../webgui/dist/index.html"))
     });
 
     let routes = index
