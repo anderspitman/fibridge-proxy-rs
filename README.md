@@ -59,7 +59,7 @@ Hi there
 
 Ranged requests work too:
 ```bash
-curl -H "Range: bytes=0-2" example.com:9001/file.txt
+curl -H "Range: bytes=0-2" example.com:9001/<hoster-uuid>/file.txt
 Hi
 ```
 
