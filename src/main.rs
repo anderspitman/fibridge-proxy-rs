@@ -59,6 +59,8 @@ fn main() {
         .and_then(move |range, id: String, filename: String| {
             let mut lock = range_clone.lock().expect("get lock");
 
+            println!("GET /{}/{} {}", id, filename, range);
+
             match lock.get_mut(&id) {
                 Some(manager) => {
                     Either::A(manager.process_request(filename, range)
@@ -79,6 +81,8 @@ fn main() {
         .and(warp::path::param())
         .and_then(move |id: String, filename: String| {
 
+            println!("GET /{}/{}", id, filename);
+
             let mut lock = hoster_managers_clone.lock().expect("get lock");
 
             match lock.get_mut(&id) {
@@ -97,7 +101,7 @@ fn main() {
             }
         });
 
-    let download = ranged.or(non_ranged);
+    let download = warp::get2().and(ranged.or(non_ranged));
 
     let index = warp::path::end().map(|| {
         warp::reply::html(include_str!("../webgui/dist/index.html"))
