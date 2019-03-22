@@ -1,7 +1,15 @@
 const fibridge = require('fibridge-host');
 
 const proxyAddress = window.location.hostname;
-const port = 9001;
+const portStr = window.location.port;
+
+let port;
+if (portStr === "") {
+  port = 80;
+}
+else {
+  port = parseInt(portStr, 10);
+}
 
 fibridge.createHoster({ proxyAddress, port, secure: false }).then((hoster) => {
 

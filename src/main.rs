@@ -9,11 +9,31 @@ use warp::http::{Response};
 use hoster_manager::HosterManager;
 use futures::Future;
 use futures::future::Either;
+use clap::{App, Arg};
+use std::net::SocketAddrV4;
 
 type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
 
 
 fn main() {
+    let matches = App::new("fibridge proxy")
+        .about("Share local files via HTTP streaming")
+        .arg(Arg::with_name("ip")
+             .short("i")
+             .long("ip-address")
+             .value_name("IP")
+             .takes_value(true))
+        .arg(Arg::with_name("port")
+             .short("p")
+             .long("port")
+             .value_name("PORT")
+             .takes_value(true))
+        .get_matches();
+
+    let port = matches.value_of("port").unwrap_or("9001");
+    let ip = matches.value_of("ip").unwrap_or("127.0.0.1");
+    let addr = format!("{}:{}", ip, port);
+
     let hoster_managers = Arc::new(Mutex::new(HashMap::new()));
     let hoster_managers_clone = hoster_managers.clone();
     let range_clone = hoster_managers.clone();
@@ -88,5 +108,5 @@ fn main() {
         .or(download);
 
     warp::serve(routes)
-        .run(([127, 0, 0, 1], 9001));
+        .run(addr.parse::<SocketAddrV4>().expect("parse address"));
 }
