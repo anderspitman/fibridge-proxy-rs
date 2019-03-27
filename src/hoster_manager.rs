@@ -15,9 +15,7 @@ use warp::filters::ws::{WebSocket};
 use crate::stats_conduit::StatsConduit;
 
 
-//type ResponseTx = mpsc::UnboundedSender<Vec<u8>>;
-type ResponseTx = oneshot::Sender<Response<Body>>;
-type ResponseTxs = Arc<Mutex<HashMap<usize, ResponseTx>>>;
+type ResponseManagers = Arc<Mutex<HashMap<usize, ResponseManager>>>;
 type Cache = Arc<Mutex<HashMap<String, Vec<u8>>>>;
 
 const MAX_CACHED_SIZE: usize = 20 * 1024 * 1024;
@@ -27,8 +25,12 @@ pub struct HosterManager {
     id: String,
     next_request_id: usize,
     mux: Multiplexer,
-    response_txs: ResponseTxs,
+    response_managers: ResponseManagers,
     cache: Cache,
+}
+
+struct ResponseManager {
+    tx: oneshot::Sender<Response<Body>>,
 }
 
 impl HosterManager {
@@ -51,8 +53,8 @@ impl HosterManager {
 
         let events = mux.events().expect("no events");
 
-        let response_txs: ResponseTxs = Arc::new(Mutex::new(HashMap::new()));
-        let response_txs_clone = response_txs.clone();
+        let response_managers: ResponseManagers = Arc::new(Mutex::new(HashMap::new()));
+        let response_managers_clone = response_managers.clone();
 
         warp::spawn(events.for_each(move |event| {
 
@@ -68,14 +70,14 @@ impl HosterManager {
                         match &message["requestId"] {
                             Value::Number(request_id) => {
                                 let request_id = request_id.as_u64().expect("parse u64") as usize;
-                                let mut lock = response_txs_clone.lock().expect("get lock");
-                                let response_tx = lock.remove(&request_id).expect("removed tx");
+                                let mut lock = response_managers_clone.lock().expect("get lock");
+                                let response_manager = lock.remove(&request_id).expect("removed tx");
 
                                 let response = Response::builder()
                                     .status(404)
                                     .body("Not found".into()).expect("error response");
 
-                                response_tx.send(response).unwrap();
+                                response_manager.tx.send(response).unwrap();
                             },
                             _ => (),
                         }
@@ -135,9 +137,9 @@ impl HosterManager {
                         .body(body).expect("response");
 
 
-                    let mut lock = response_txs_clone.lock().expect("get lock");
-                    let response_tx = lock.remove(&request_id).expect("removed tx");
-                    response_tx.send(response).unwrap();
+                    let mut lock = response_managers_clone.lock().expect("get lock");
+                    let response_manager = lock.remove(&request_id).expect("removed tx");
+                    response_manager.tx.send(response).unwrap();
 
                     let cache = cache_clone.clone();
 
@@ -183,7 +185,7 @@ impl HosterManager {
             id: id.to_string(),
             next_request_id: 0,
             mux,
-            response_txs,
+            response_managers,
             cache,
         }
     }
@@ -227,7 +229,10 @@ impl HosterManager {
 
         let (response_tx, response_rx) = oneshot::channel();
 
-        self.response_txs.lock().expect("get lock").insert(request_id, response_tx);
+        let response_manager = ResponseManager {
+            tx: response_tx,
+        };
+        self.response_managers.lock().expect("get lock").insert(request_id, response_manager);
 
         response_rx
     }
