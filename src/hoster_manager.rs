@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 use omnistreams::{
     Multiplexer, MultiplexerEvent, EventEmitter, Producer, SinkAdapter,
+    MapConduit, Message,
 };
 use super::transport::WebSocketTransport;
 use warp::http::{Response};
@@ -17,6 +18,9 @@ use crate::stats_conduit::StatsConduit;
 //type ResponseTx = mpsc::UnboundedSender<Vec<u8>>;
 type ResponseTx = oneshot::Sender<Response<Body>>;
 type ResponseTxs = Arc<Mutex<HashMap<usize, ResponseTx>>>;
+type Cache = Arc<Mutex<HashMap<String, Vec<u8>>>>;
+
+const MAX_CACHED_SIZE: usize = 20 * 1024 * 1024;
 
 
 pub struct HosterManager {
@@ -24,10 +28,14 @@ pub struct HosterManager {
     next_request_id: usize,
     mux: Multiplexer,
     response_txs: ResponseTxs,
+    cache: Cache,
 }
 
 impl HosterManager {
     pub fn new(ws: WebSocket) -> Self {
+
+        let cache = Arc::new(Mutex::new(HashMap::new()));
+        let cache_clone = cache.clone();
 
         let transport = WebSocketTransport::new(ws);
         let mut mux = Multiplexer::new(transport);
@@ -93,15 +101,15 @@ impl HosterManager {
 
                     let mut builder = Response::builder();
 
-                    let size = md["size"].as_u64().expect("parse size");
+                    let size = md["size"].as_u64().expect("parse size") as usize;
 
                     match md.get("range") {
                         Some(Value::Object(range)) => {
-                            let start = range["start"].as_u64().expect("parse start");
+                            let start = range["start"].as_u64().expect("parse start") as usize;
 
                             let end = match range.get("end") {
                                 Some(Value::Number(end)) => {
-                                    end.as_u64().expect("parse end")
+                                    end.as_u64().expect("parse end") as usize
                                 },
                                 _ => size,
                             };
@@ -131,8 +139,39 @@ impl HosterManager {
                     let response_tx = lock.remove(&request_id).expect("removed tx");
                     response_tx.send(response).unwrap();
 
+                    let cache = cache_clone.clone();
+
+                    // TODO: this is hacky
+                    let mut cached = if size <= MAX_CACHED_SIZE {
+                        vec![0; size]
+                    }
+                    else {
+                        Vec::new()
+                    };
+
+                    let mut index = 0;
+                    let cache_conduit = MapConduit::new(move |data: Message| {
+
+                        if size <= MAX_CACHED_SIZE {
+
+                            println!("chunk: {}", data.len());
+
+                            for elem in &data {
+                                cached[index] = *elem;
+                                index += 1;
+                            }
+
+                            if index == size {
+                                cache.lock().expect("lock cache").insert("yolo".to_string(), cached.clone());
+                            }
+                        }
+
+                        data
+                    });
+
                     let consumer = SinkAdapter::new(stream_tx);
                     producer
+                        .pipe_through(cache_conduit)
                         .pipe_through(StatsConduit::new(request_id))
                         .pipe_into(consumer);
                 }
@@ -145,6 +184,7 @@ impl HosterManager {
             next_request_id: 0,
             mux,
             response_txs,
+            cache,
         }
     }
 
@@ -167,6 +207,14 @@ impl HosterManager {
             "url": format!("/{}", filename),
             "requestId": request_id,
         });
+
+        //match self.cache.lock().expect("lock cache").get(&filename) {
+        match self.cache.lock().expect("lock cache").get("yolo") {
+            Some(_cached) => {
+                println!("serve from cache");
+            },
+            None => (),
+        }
 
         let range = parse_range_header(&range_header);
 
