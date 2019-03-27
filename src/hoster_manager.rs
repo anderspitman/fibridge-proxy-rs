@@ -30,6 +30,7 @@ pub struct HosterManager {
 }
 
 struct ResponseManager {
+    cache_key: String,
     tx: oneshot::Sender<Response<Body>>,
 }
 
@@ -142,6 +143,7 @@ impl HosterManager {
                     response_manager.tx.send(response).unwrap();
 
                     let cache = cache_clone.clone();
+                    let cache_key = response_manager.cache_key.clone();
 
                     // TODO: this is hacky
                     let mut cached = if size <= MAX_CACHED_SIZE {
@@ -156,15 +158,16 @@ impl HosterManager {
 
                         if size <= MAX_CACHED_SIZE {
 
-                            println!("chunk: {}", data.len());
-
                             for elem in &data {
                                 cached[index] = *elem;
                                 index += 1;
                             }
 
                             if index == size {
-                                cache.lock().expect("lock cache").insert("yolo".to_string(), cached.clone());
+                                println!("add {} to cache", cache_key.clone());
+                                cache.lock().expect("lock cache")
+                                    // TODO: get rid of this extra clone
+                                    .insert(cache_key.clone(), cached.clone());
                             }
                         }
 
@@ -210,26 +213,31 @@ impl HosterManager {
             "requestId": request_id,
         });
 
-        //match self.cache.lock().expect("lock cache").get(&filename) {
-        match self.cache.lock().expect("lock cache").get("yolo") {
-            Some(_cached) => {
-                println!("serve from cache");
-            },
-            None => (),
-        }
+        let (response_tx, response_rx) = oneshot::channel();
 
         let range = parse_range_header(&range_header);
 
         if range.is_some() {
             request["range"] = range.unwrap();
         }
+        else {
+            match self.cache.lock().expect("lock cache").get(&filename) {
+                Some(cached) => {
+                    println!("serve {} from cache", filename);
+                    // TODO: this early return is nastay
+                    let response = Response::builder()
+                        .body(cached.clone().into()).expect("error response");
+                    response_tx.send(response).expect("response_tx send");
+                    return response_rx;
+                },
+                None => (),
+            }
+        }
 
         self.mux.send_control_message(request.to_string().as_bytes().to_vec());
-        
-
-        let (response_tx, response_rx) = oneshot::channel();
 
         let response_manager = ResponseManager {
+            cache_key: filename,
             tx: response_tx,
         };
         self.response_managers.lock().expect("get lock").insert(request_id, response_manager);
