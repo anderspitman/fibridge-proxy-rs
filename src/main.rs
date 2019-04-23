@@ -11,6 +11,7 @@ use futures::Future;
 use futures::future::Either;
 use clap::{App, Arg};
 use std::net::SocketAddrV4;
+use rand::Rng;
 
 type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
 
@@ -44,7 +45,17 @@ fn main() {
         .map(|hoster_managers: HosterManagers, ws: warp::ws::Ws2| {
             ws.on_upgrade(move |socket| {
                 
-                let hoster = HosterManager::new(socket);
+                let mut id = generate_id();
+
+                // ensure id is unique
+                while hoster_managers.lock().expect("get lock").get(&id).is_some() {
+                    println!("not unique");
+                    id = generate_id();
+                }
+
+                dbg!(hoster_managers.lock().expect("get lock").keys());
+
+                let hoster = HosterManager::new(id, socket);
 
                 hoster_managers.lock().expect("get lock").insert(hoster.id(), hoster);
 
@@ -113,4 +124,28 @@ fn main() {
 
     warp::serve(routes)
         .run(addr.parse::<SocketAddrV4>().expect("parse address"));
+}
+
+fn generate_id() -> String {
+    let mut rng = rand::thread_rng();
+    let possible = "0123456789abcdefghijkmnpqrstuvwxyz";
+
+    let mut random_char = || {
+        let rand_index = rng.gen_range(0, possible.len());
+        possible.chars().nth(rand_index).expect("error generating index")
+    };
+
+    let mut id = String::new();
+
+    for _ in 0..4 {
+        id.push(random_char());
+    }
+
+    id.push('-');
+
+    for _ in 0..4 {
+        id.push(random_char());
+    }
+
+    id
 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use futures::sync::{mpsc, oneshot};
 use futures::{Stream};
 use serde_json::{json, Value};
-use uuid::Uuid;
+//use uuid::Uuid;
 use omnistreams::{
     Multiplexer, MultiplexerEvent, EventEmitter, Producer, SinkAdapter,
     MapConduit, Message,
@@ -35,7 +35,7 @@ struct ResponseManager {
 }
 
 impl HosterManager {
-    pub fn new(ws: WebSocket) -> Self {
+    pub fn new(id: String, ws: WebSocket) -> Self {
 
         let cache = Arc::new(Mutex::new(HashMap::new()));
         let cache_clone = cache.clone();
@@ -43,7 +43,7 @@ impl HosterManager {
         let transport = WebSocketTransport::new(ws);
         let mut mux = Multiplexer::new(transport);
 
-        let id = Uuid::new_v4();
+        //let id = Uuid::new_v4();
 
         let handshake_string = json!({
             "type": "complete-handshake",
@@ -271,3 +271,5 @@ fn parse_range_header(header: &str) -> Option<Value> {
         Some(range)
     }
 }
+
+
