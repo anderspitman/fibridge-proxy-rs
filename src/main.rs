@@ -48,6 +48,9 @@ fn main() {
 
                 hoster_managers.lock().expect("get lock").insert(hoster.id(), hoster);
 
+                // TODO: eventually need to actually remove the old ones
+                dbg!(hoster_managers.lock().expect("get lock").keys());
+
                 futures::future::ok(())
             })
         });
