@@ -1,23 +1,22 @@
 use futures::sync::mpsc;
 use futures::{Future, Stream, Sink};
 use warp::filters::ws::{Message, WebSocket};
-use omnistreams::{Transport};
+use omnistreams::{Transport, TransportEvent, TransportEventRx};
 
 type OmniMessage = Vec<u8>;
-type MessageRx = mpsc::UnboundedReceiver<OmniMessage>;
 type MessageTx = mpsc::UnboundedSender<OmniMessage>;
 
 
 pub struct WebSocketTransport {
     out_tx: MessageTx,
-    in_rx: Option<MessageRx>,
+    event_rx: Option<TransportEventRx>,
 }
 
 impl WebSocketTransport {
     pub fn new(ws: WebSocket) -> Self {
         let (ws_sink, ws_stream) = ws.split();
         let (out_tx, out_rx) = mpsc::unbounded::<OmniMessage>();
-        let (in_tx, in_rx) = mpsc::unbounded::<OmniMessage>();
+        let (event_tx, event_rx) = mpsc::unbounded::<TransportEvent>();
 
         let ws_sink = ws_sink
             .sink_map_err(|_e| ());
@@ -32,29 +31,37 @@ impl WebSocketTransport {
         warp::spawn(out_task);
 
 
-        let in_tx = in_tx.sink_map_err(|_e| ());
+        let event_tx = event_tx.sink_map_err(|_e| {
+            eprintln!("transport sink_map_err");
+        });
 
         let in_task = ws_stream.map_err(|_e| ())
             .map(|ws_message| {
-                ws_message.as_bytes().to_vec()
+                TransportEvent::Message(ws_message.as_bytes().to_vec())
             })
-            .forward(in_tx)
-            .map(|_| ());
+            .forward(event_tx)
+            .map(|(_, sink)| {
+                //let sink = sink.sink_map_err(|_| ());
+                //warp::spawn(sink.send(TransportEvent::Close).map(|_| ()));
+            });
 
         warp::spawn(in_task);
 
+
         Self {
             out_tx,
-            in_rx: Some(in_rx),
+            event_rx: Some(event_rx),
         }
     }
 }
 
 impl Transport for WebSocketTransport {
+
     fn send(&mut self, message: OmniMessage) {
         self.out_tx.unbounded_send(message).expect("ws transport send");
     }
-    fn messages(&mut self) -> Option<mpsc::UnboundedReceiver<OmniMessage>> {
-        Option::take(&mut self.in_rx)
+
+    fn event_stream(&mut self) -> Option<TransportEventRx> {
+        Option::take(&mut self.event_rx)
     }
 }
