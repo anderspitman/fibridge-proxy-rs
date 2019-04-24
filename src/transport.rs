@@ -52,7 +52,13 @@ impl WebSocketTransport {
 
 impl Transport for WebSocketTransport {
     fn send(&mut self, message: OmniMessage) {
-        self.out_tx.unbounded_send(message).expect("ws transport send");
+        match self.out_tx.unbounded_send(message) {
+            Ok(_) => {
+            },
+            Err(_) => {
+                eprintln!("Transport attempt to send on closed out_Tx");
+            },
+        }
     }
     fn messages(&mut self) -> Option<mpsc::UnboundedReceiver<OmniMessage>> {
         Option::take(&mut self.in_rx)
