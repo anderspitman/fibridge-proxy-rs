@@ -35,7 +35,7 @@ struct ResponseManager {
 }
 
 impl HosterManager {
-    pub fn new(ws: WebSocket) -> Self {
+    pub fn new(ws: WebSocket, done_tx: mpsc::UnboundedSender<String>) -> Self {
 
         let cache = Arc::new(Mutex::new(HashMap::new()));
         let cache_clone = cache.clone();
@@ -60,6 +60,10 @@ impl HosterManager {
         warp::spawn(events.for_each(move |event| {
 
             match event {
+                MultiplexerEvent::Close => {
+                    println!("signal done");
+                    done_tx.unbounded_send(id.to_string()).unwrap();
+                },
                 MultiplexerEvent::ControlMessage(control_message) => {
                     let message: Value = serde_json::from_slice(&control_message)
                         .expect("parse control message");

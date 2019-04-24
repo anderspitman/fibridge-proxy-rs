@@ -7,10 +7,12 @@ use std::collections::HashMap;
 use warp::{self, Filter};
 use warp::http::{Response};
 use hoster_manager::HosterManager;
-use futures::Future;
+use futures::{Future, Stream};
+use futures::sync::{mpsc};
 use futures::future::Either;
 use clap::{App, Arg};
 use std::net::SocketAddrV4;
+use hyper::rt;
 
 type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
 
@@ -37,14 +39,26 @@ fn main() {
     let hoster_managers = Arc::new(Mutex::new(HashMap::new()));
     let hoster_managers_clone = hoster_managers.clone();
     let range_clone = hoster_managers.clone();
+    let done_clone = hoster_managers.clone();
+
+    let (done_tx, done_rx) = mpsc::unbounded::<String>();
+
+    let done_stream = done_rx.for_each(move |done_id| {
+        done_clone.lock().expect("get lock").remove(&done_id);
+        Ok(())
+    }).map_err(|_| ());
+    //warp::spawn(f);
 
     let omnis = warp::path("omnistreams")
         .map(move || hoster_managers.clone())
         .and(warp::ws2())
-        .map(|hoster_managers: HosterManagers, ws: warp::ws::Ws2| {
+        .map(move |hoster_managers: HosterManagers, ws: warp::ws::Ws2| {
+
+            let done_tx = done_tx.clone();
+
             ws.on_upgrade(move |socket| {
                 
-                let hoster = HosterManager::new(socket);
+                let hoster = HosterManager::new(socket, done_tx);
 
                 hoster_managers.lock().expect("get lock").insert(hoster.id(), hoster);
 
@@ -114,6 +128,12 @@ fn main() {
         .or(omnis)
         .or(download);
 
-    warp::serve(routes)
-        .run(addr.parse::<SocketAddrV4>().expect("parse address"));
+    let server_future = warp::serve(routes)
+        .bind(addr.parse::<SocketAddrV4>().expect("parse address"));
+
+    rt::run(rt::lazy(|| {
+        rt::spawn(done_stream);
+        rt::spawn(server_future);
+        Ok(())
+    }));
 }
