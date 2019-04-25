@@ -1,7 +1,10 @@
+use std::sync::{Arc, Mutex};
+use futures::{Future, Stream, Sink};
+use futures::sync::{mpsc};
 use omnistreams::{
     Streamer, Producer, Consumer, Conduit, CancelReason,
     ProducerEventRx, ConsumerEventRx, MapConduit, Message,
-    MapConsumer, MapProducer,
+    MapConsumer, MapProducer, ConsumerEvent,
 };
 
 pub struct StatsConduit {
@@ -10,29 +13,45 @@ pub struct StatsConduit {
 }
 
 impl StatsConduit {
-    pub fn new(_request_id: usize) -> Self {
+    pub fn new(request_id: usize) -> Self {
 
-        let mut total_items = 0;
-        let mut total_bytes = 0;
-
-        let item_counter = MapConduit::new(move |item: Message| {
-            total_items += 1;
-            //println!("{} items: {}", request_id, total_items);
-            item
-        });
+        let total_bytes: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+        let total_bytes_clone = total_bytes.clone();
 
         let byte_counter = MapConduit::new(move |item: Message| {
-            total_bytes += item.len();
-            //println!("{} bytes: {}", request_id, total_bytes);
+            let mut val = total_bytes.lock().expect("lock");
+            *val += item.len();
             item
         });
 
-        let (c_item, p_item) = item_counter.split();
-        let (c_byte, p_byte) = byte_counter.split();
-        p_item.pipe_into(c_byte);
+
+        let (mut c_byte, p_byte) = byte_counter.split();
+
+        let events = c_byte.event_stream().expect("get events");
+
+        let (tx, rx) = mpsc::unbounded();
+        let tx = tx.sink_map_err(|_| ());
+
+        let events_fut = events.map(move |event| {
+            match event {
+                ConsumerEvent::Cancellation(_) => {
+                    let val = total_bytes_clone.lock().expect("lock");
+                    println!("Canceled {} after {} bytes", request_id, *val);
+                },
+                _ => (),
+            }
+
+            event
+        })
+        .forward(tx)
+        .map(|_| ());
+
+        warp::spawn(events_fut);
+
+        c_byte.set_event_stream(rx);
 
         Self {
-            consumer: c_item,
+            consumer: c_byte,
             producer: p_byte,
         }
     }
@@ -56,6 +75,10 @@ impl Consumer<Message> for StatsConduit {
     fn event_stream(&mut self) -> Option<ConsumerEventRx> {
         self.consumer.event_stream()
     }
+
+    fn set_event_stream(&mut self, event_stream: ConsumerEventRx) {
+        self.consumer.set_event_stream(event_stream);
+    }
 }
 
 impl Producer<Message> for StatsConduit {
@@ -65,6 +88,10 @@ impl Producer<Message> for StatsConduit {
 
     fn event_stream(&mut self) -> Option<ProducerEventRx<Message>> {
         self.producer.event_stream()
+    }
+
+    fn set_event_stream(&mut self, event_stream: ProducerEventRx<Message>) {
+        self.producer.set_event_stream(event_stream);
     }
 }
 
