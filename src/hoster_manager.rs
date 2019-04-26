@@ -45,12 +45,13 @@ impl HosterManager {
 
         let id = Uuid::new_v4();
 
-        let handshake_string = json!({
-            "type": "complete-handshake",
-            "id": id,
+        let rpc_set_id = json!({
+            "jsonrpc": "2.0",
+            "method": "setId",
+            "params": id,
         }).to_string();
 
-        mux.send_control_message(handshake_string.as_bytes().to_vec());
+        mux.send_control_message(rpc_set_id.as_bytes().to_vec());
 
         let events = mux.events().expect("no events");
 
@@ -70,9 +71,9 @@ impl HosterManager {
 
                     println!("{}", message);
 
-                    if message["type"] == "error" {
+                    if message.get("error").is_some() {
 
-                        match &message["requestId"] {
+                        match &message["id"] {
                             Value::Number(request_id) => {
                                 let request_id = request_id.as_u64().expect("parse u64") as usize;
                                 let mut lock = response_managers_clone.lock().expect("get lock");
@@ -80,7 +81,8 @@ impl HosterManager {
 
                                 let response = Response::builder()
                                     .status(404)
-                                    .body("Not found".into()).expect("error response");
+                                    .body(message["error"]["message"].to_string().into())
+                                      .expect("error response");
 
                                 response_manager.tx.send(response).unwrap();
                             },
@@ -108,9 +110,9 @@ impl HosterManager {
 
                     let mut builder = Response::builder();
 
-                    let size = md["size"].as_u64().expect("parse size") as usize;
+                    let size = md["result"]["size"].as_u64().expect("parse size") as usize;
 
-                    match md.get("range") {
+                    match md["result"].get("range") {
                         Some(Value::Object(range)) => {
                             let start = range["start"].as_u64().expect("parse start") as usize;
 
@@ -212,9 +214,12 @@ impl HosterManager {
         let request_id = self.next_request_id();
 
         let mut request = json!({
-            "type": "GET",
-            "url": format!("/{}", filename),
-            "requestId": request_id,
+            "jsonrpc": "2.0",
+            "method": "getFile",
+            "params": json!({
+                "path": format!("/{}", filename),
+            }),
+            "id": request_id,
         });
 
         let (response_tx, response_rx) = oneshot::channel();
@@ -222,7 +227,7 @@ impl HosterManager {
         let range = parse_range_header(&range_header);
 
         if range.is_some() {
-            request["range"] = range.unwrap();
+            request["params"]["range"] = range.unwrap();
         }
         else {
             match self.cache.lock().expect("lock cache").get(&filename) {
