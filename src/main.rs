@@ -121,7 +121,7 @@ fn main() {
     let download = warp::get2().and(ranged.or(non_ranged));
 
     let index = warp::path::end().map(|| {
-        warp::reply::html(include_str!("../webgui/dist/index.html"))
+        warp::reply::html(include_str!("../../fibridge-gui-js/dist/index.html"))
     });
 
     let routes = index
