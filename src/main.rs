@@ -36,6 +36,14 @@ fn main() {
              .long("id-type")
              .value_name("ID TYPE")
              .takes_value(true))
+        .arg(Arg::with_name("key")
+             .long("key")
+             .value_name("TLS_KEY")
+             .takes_value(true))
+        .arg(Arg::with_name("cert")
+             .long("cert")
+             .value_name("TLS_CERT")
+             .takes_value(true))
         .get_matches();
 
     let port = matches.value_of("port").unwrap_or("9001");
@@ -149,12 +157,26 @@ fn main() {
         .or(omnis)
         .or(download);
 
-    let server_future = warp::serve(routes)
-        .bind(addr.parse::<SocketAddrV4>().expect("parse address"));
 
-    rt::run(rt::lazy(|| {
-        rt::spawn(done_stream);
-        rt::spawn(server_future);
-        Ok(())
-    }));
+    let key = matches.value_of("key");
+    let cert = matches.value_of("cert");
+
+    if key.is_some() && cert.is_some() {
+        let server_future = warp::serve(routes)
+            .tls(cert.unwrap(), key.unwrap())
+            .bind(addr.parse::<SocketAddrV4>().expect("parse address"));
+        rt::run(rt::lazy(|| {
+            rt::spawn(done_stream);
+            rt::spawn(server_future);
+            Ok(())
+        }));
+    }
+    else {
+        let server_future = warp::serve(routes).bind(addr.parse::<SocketAddrV4>().expect("parse address"));
+        rt::run(rt::lazy(|| {
+            rt::spawn(done_stream);
+            rt::spawn(server_future);
+            Ok(())
+        }));
+    }
 }
