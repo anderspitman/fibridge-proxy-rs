@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use futures::sync::{mpsc, oneshot};
 use futures::{Stream};
 use serde_json::{json, Value};
-use uuid::Uuid;
 use omnistreams::{
     Multiplexer, MultiplexerEvent, EventEmitter, Producer, SinkAdapter,
     MapConduit, Message,
@@ -35,15 +34,13 @@ struct ResponseManager {
 }
 
 impl HosterManager {
-    pub fn new(ws: WebSocket, done_tx: mpsc::UnboundedSender<String>) -> Self {
+    pub fn new(id: String, ws: WebSocket, done_tx: mpsc::UnboundedSender<String>) -> Self {
 
         let cache = Arc::new(Mutex::new(HashMap::new()));
         let cache_clone = cache.clone();
 
         let transport = WebSocketTransport::new(ws);
         let mut mux = Multiplexer::new(transport);
-
-        let id = Uuid::new_v4();
 
         let rpc_set_id = json!({
             "jsonrpc": "2.0",
@@ -58,12 +55,16 @@ impl HosterManager {
         let response_managers: ResponseManagers = Arc::new(Mutex::new(HashMap::new()));
         let response_managers_clone = response_managers.clone();
 
+        let id_clone = id.clone();
+
         warp::spawn(events.for_each(move |event| {
+
+            let id = (&id_clone).clone();
 
             match event {
                 MultiplexerEvent::Close => {
                     println!("signal done");
-                    done_tx.unbounded_send(id.to_string()).unwrap();
+                    done_tx.unbounded_send(id).unwrap();
                 },
                 MultiplexerEvent::ControlMessage(control_message) => {
                     let message: Value = serde_json::from_slice(&control_message)
@@ -191,7 +192,7 @@ impl HosterManager {
         }));
 
         Self {
-            id: id.to_string(),
+            id: id.clone(),
             next_request_id: 0,
             mux,
             response_managers,

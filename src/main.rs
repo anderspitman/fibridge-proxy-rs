@@ -1,6 +1,7 @@
 mod transport;
 mod hoster_manager;
 mod stats_conduit;
+mod id_generator;
 
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -13,6 +14,7 @@ use futures::future::Either;
 use clap::{App, Arg};
 use std::net::SocketAddrV4;
 use hyper::rt;
+use crate::id_generator::{create_generator};
 
 type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
 
@@ -30,10 +32,15 @@ fn main() {
              .long("port")
              .value_name("PORT")
              .takes_value(true))
+        .arg(Arg::with_name("id-type")
+             .long("id-type")
+             .value_name("ID TYPE")
+             .takes_value(true))
         .get_matches();
 
     let port = matches.value_of("port").unwrap_or("9001");
     let ip = matches.value_of("ip").unwrap_or("127.0.0.1");
+    let id_type = matches.value_of("id-type").unwrap_or("short-code");
     let addr = format!("{}:{}", ip, port);
 
     let hoster_managers = Arc::new(Mutex::new(HashMap::new()));
@@ -47,7 +54,8 @@ fn main() {
         done_clone.lock().expect("get lock").remove(&done_id);
         Ok(())
     }).map_err(|_| ());
-    //warp::spawn(f);
+
+    let id_generator = Arc::new(create_generator(id_type));
 
     let omnis = warp::path("omnistreams")
         .map(move || hoster_managers.clone())
@@ -55,10 +63,23 @@ fn main() {
         .map(move |hoster_managers: HosterManagers, ws: warp::ws::Ws2| {
 
             let done_tx = done_tx.clone();
+            let id_generator = id_generator.clone();
 
             ws.on_upgrade(move |socket| {
                 
-                let hoster = HosterManager::new(socket, done_tx);
+                let mut id = id_generator.gen();
+
+                // TODO: this is pretty hacky
+                let mut id_attempts = 0;
+                while hoster_managers.lock().expect("get lock").get(&id).is_some() {
+                    id = id_generator.gen();
+                    id_attempts += 1;
+                    if id_attempts > 1000 {
+                        panic!("Out of ids");
+                    }
+                }
+
+                let hoster = HosterManager::new(id.to_string(), socket, done_tx);
 
                 hoster_managers.lock().expect("get lock").insert(hoster.id(), hoster);
 
