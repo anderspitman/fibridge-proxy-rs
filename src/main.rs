@@ -6,7 +6,8 @@ mod id_generator;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use warp::{self, Filter};
-use warp::http::{Response};
+use warp::http::{Response, Uri};
+use warp::path::FullPath;
 use hoster_manager::HosterManager;
 use futures::{Future, Stream};
 use futures::sync::{mpsc};
@@ -22,6 +23,11 @@ type HosterManagers = Arc<Mutex<HashMap<String, HosterManager>>>;
 fn main() {
     let matches = App::new("fibridge proxy")
         .about("Share local files via HTTP streaming")
+        .arg(Arg::with_name("host")
+             .short("h")
+             .long("host")
+             .value_name("HOST")
+             .takes_value(true))
         .arg(Arg::with_name("ip")
              .short("i")
              .long("ip-address")
@@ -43,6 +49,10 @@ fn main() {
         .arg(Arg::with_name("cert")
              .long("cert")
              .value_name("TLS_CERT")
+             .takes_value(true))
+        .arg(Arg::with_name("secure-port")
+             .long("secure-port")
+             .value_name("SECURE_PORT")
              .takes_value(true))
         .get_matches();
 
@@ -161,13 +171,37 @@ fn main() {
     let key = matches.value_of("key");
     let cert = matches.value_of("cert");
 
+
     if key.is_some() && cert.is_some() {
-        let server_future = warp::serve(routes)
+
+        let secure_port = matches.value_of("secure-port").unwrap_or("9002");
+        
+        // if host was specified, use that value, otherwise use the ip
+        let host = matches.value_of("host").unwrap_or(ip);
+        let secure_redirect_link = format!("{}:{}", host, secure_port);
+
+        // redirect http to https
+        let http_routes = warp::path::full().map(move |path: FullPath| {
+            let uri = Uri::builder()
+                .scheme("https")
+                .authority(secure_redirect_link.as_str())
+                .path_and_query(path.as_str())
+                .build()
+                .expect("parse uri");
+            warp::redirect(uri) 
+        });
+        let http_server_future = warp::serve(http_routes)
+            .bind(addr.parse::<SocketAddrV4>()
+            .expect("parse address"));
+
+        let secure_addr = format!("{}:{}", ip, secure_port);
+        let https_server_future = warp::serve(routes)
             .tls(cert.unwrap(), key.unwrap())
-            .bind(addr.parse::<SocketAddrV4>().expect("parse address"));
+            .bind(secure_addr.parse::<SocketAddrV4>().expect("parse address"));
         rt::run(rt::lazy(|| {
             rt::spawn(done_stream);
-            rt::spawn(server_future);
+            rt::spawn(http_server_future);
+            rt::spawn(https_server_future);
             Ok(())
         }));
     }
