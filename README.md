@@ -89,6 +89,12 @@ cargo build --release
 If all goes well you should end up with a binary in `fibridge-proxy-rs/target/release`.
 
 # Other implementations
-There is an equivalent JavaScript (Node) implementation of the proxy server
+There is an API-compatible JavaScript (Node) implementation of the proxy server
 available
 [here](https://github.com/anderspitman/fibridge-proxy-js).
+
+# API
+I still need to publish the API, but it's pretty simple. It uses
+[omni-rpc](https://github.com/omnistreams/omni-rpc-spec), which is
+itself built on top of
+[omnistreams](https://github.com/omnistreams/omnistreams-spec).
