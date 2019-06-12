@@ -1,6 +1,3 @@
-**NOTE: This is still an early work in progress and not quite ready for
-production at the moment.**
-
 The point of this is to allow your browser to "host" files which can be
 streamed over HTTP. This requires a proxy server to handle the HTTP requests
 and forward them to the browser over websockets.
@@ -16,12 +13,24 @@ backend tools such as samtools.
 # Example usage
 
 First start up the proxy server. We'll assume it's publicly available at
-example.com. It's currently hard-coded to listen for both HTTP and websocket
-connections on port 9001.
+example.com. You can either download it from the release page, or clone this
+repo and run
 
 ```bash
 cd fibridge-proxy-rs
-cargo run --release
+cargo build --release
+```
+
+Then start it up:
+
+```bash
+./fibridge-proxy-rs --port 9001
+```
+
+A few useful options:
+
+```bash
+sudo ./fibridge-rs --host fbrg.xyz --port 80 --ip-address 192.168.0.1 --key keyfile.pem --cert certfile.pem --secure-port 443
 ```
 
 Create a hoster object in the browser and host a file (see
