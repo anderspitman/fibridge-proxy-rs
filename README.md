@@ -25,7 +25,7 @@ Then start it up:
 A few useful options:
 
 ```bash
-sudo ./fibridge-rs --host fbrg.xyz --port 80 --ip-address 192.168.0.1 --key keyfile.pem --cert certfile.pem --secure-port 443
+sudo ./fibridge-proxy-rs --host fbrg.xyz --port 80 --ip-address 192.168.0.1 --key keyfile.pem --cert certfile.pem --secure-port 443
 ```
 
 Create a hoster object in the browser and host a file (see
