@@ -71,9 +71,11 @@ Hi
 In order to build from source, you'll first need rust installed. The proxy currently expects
 the GUI repo to be available in the same directory, like this:
 
+```
 fibridge/
   fibridge-proxy-rs/
   fibridge-gui-js/
+```
   
 See [fibridge-gui-js](https://github.com/anderspitman/fibridge-gui-js) for instructions
 on building the GUI.
