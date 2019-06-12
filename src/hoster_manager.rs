@@ -63,8 +63,7 @@ impl HosterManager {
 
             match event {
                 MultiplexerEvent::Close => {
-                    println!("signal done");
-                    done_tx.unbounded_send(id).unwrap();
+                    done_tx.unbounded_send(id).expect("signal done");
                 },
                 MultiplexerEvent::ControlMessage(control_message) => {
                     let message: Value = serde_json::from_slice(&control_message)
@@ -85,7 +84,7 @@ impl HosterManager {
                                     .body(message["error"]["message"].to_string().into())
                                       .expect("error response");
 
-                                response_manager.tx.send(response).unwrap();
+                                response_manager.tx.send(response).expect("error send");
                             },
                             _ => (),
                         }
@@ -147,7 +146,10 @@ impl HosterManager {
 
                     let mut lock = response_managers_clone.lock().expect("get lock");
                     let response_manager = lock.remove(&request_id).expect("removed tx");
-                    response_manager.tx.send(response).unwrap();
+                    match response_manager.tx.send(response) {
+                        Ok(_) => (),
+                        Err(_) => (),
+                    }
 
                     let cache = cache_clone.clone();
                     let cache_key = response_manager.cache_key.clone();
@@ -228,7 +230,7 @@ impl HosterManager {
         let range = parse_range_header(&range_header);
 
         if range.is_some() {
-            request["params"]["range"] = range.unwrap();
+            request["params"]["range"] = range.expect("set range");
         }
         else {
             match self.cache.lock().expect("lock cache").get(&filename) {
