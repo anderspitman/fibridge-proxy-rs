@@ -94,7 +94,7 @@ available
 [here](https://github.com/anderspitman/fibridge-proxy-js).
 
 # API
-I still need to publish the API, but it's pretty simple. It uses
+I still need to document the API, but it's pretty simple. It uses
 [omni-rpc](https://github.com/omnistreams/omni-rpc-spec), which is
 itself built on top of
 [omnistreams](https://github.com/omnistreams/omnistreams-spec).
