@@ -13,13 +13,8 @@ backend tools such as samtools.
 # Example usage
 
 First start up the proxy server. We'll assume it's publicly available at
-example.com. You can either download it from the release page, or clone this
-repo and run
-
-```bash
-cd fibridge-proxy-rs
-cargo build --release
-```
+example.com. You can either download it from the release page, or see
+below for instructions on building.
 
 Then start it up:
 
@@ -72,7 +67,26 @@ curl -H "Range: bytes=0-2" example.com:9001/<hoster-uuid>/file.txt
 Hi
 ```
 
+# Building
+In order to build from source, you'll first need rust installed. The proxy currently expects
+the GUI repo to be available in the same directory, like this:
+
+fibridge/
+  fibridge-proxy-rs/
+  fibridge-gui-js/
+  
+See [fibridge-gui-js](https://github.com/anderspitman/fibridge-gui-js) for instructions
+on building the GUI.
+
+Once the GUI is built, run:
+
+```bash
+cargo build --release
+```
+
+If all goes well you should end up with a binary in `fibridge-proxy-rs/target/release`.
+
 # Other implementations
-There is an equivalent JavaScript (node) implementation of the proxy server
+There is an equivalent JavaScript (Node) implementation of the proxy server
 available
 [here](https://github.com/anderspitman/fibridge-proxy-js).
