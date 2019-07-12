@@ -1,5 +1,5 @@
 Rationale and introduction available in the
-[blog post](iobio.io/2019/06/12/introducing-fibridge/).
+[blog post](http://iobio.io/2019/06/12/introducing-fibridge/).
 
 The point of this is to allow your browser to "host" files which can be
 streamed over HTTP. This requires a proxy server to handle the HTTP requests
