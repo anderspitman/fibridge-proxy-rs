@@ -1,4 +1,4 @@
-**tionale and introduction is available in the
+Rationale and introduction is available in the
 [blog post](iobio.io/2019/06/12/introducing-fibridge/).
 
 The point of this is to allow your browser to "host" files which can be
