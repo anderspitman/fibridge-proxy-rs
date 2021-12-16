@@ -1,6 +1,3 @@
-Live demo instance running at https://fbrg.xyz. Feel free to use it but please try
-not to overload it (ie lots of video streaming, etc). It doesn't have much memory.
-
 Rationale and introduction available in the
 [blog post](http://iobio.io/2019/06/12/introducing-fibridge/).
 
